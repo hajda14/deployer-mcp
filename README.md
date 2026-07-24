@@ -3,14 +3,29 @@
 This stdio MCP server creates and validates `.deployer.yml`, plans deployments,
 deploys projects with domains/TLS, and reads owned deployment status and logs.
 It has no tools for profiles, users, tokens, credentials, infrastructure
-administration, or global settings.
+administration, authoritative DNS administration, arbitrary/manual DNS records,
+or global settings.
+
+When a route domain belongs to a Deployer-managed zone, deployment automatically
+publishes the route-owned `A` and/or `AAAA` values shown by the planning tool.
+Changing the route domain moves those values and deleting the route removes
+them. Manual values in the same RRset remain untouched. This lifecycle is a
+scoped deployment side effect, not a general-purpose DNS administration tool.
+
+For Let's Encrypt route bindings, set `acme_challenge_mode` to:
+
+- `auto` (recommended): DNS-01 for an active Deployer-managed zone, otherwise
+  HTTP-01.
+- `http-01`: always validate through the public gateway, including domains
+  hosted by an external DNS provider.
+- `dns-01`: require an active Deployer-managed zone or fail during planning.
 
 ## Install
 
 ```bash
 python3 -m venv "$HOME/.local/share/deployer-mcp"
 "$HOME/.local/share/deployer-mcp/bin/python" -m pip install \
-  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.1.0"
+  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.1.1"
 ```
 
 Create an `MCP only` or `REST API + MCP` token in Deployer’s Profile Settings,

@@ -14,7 +14,9 @@ mcp = FastMCP(
     instructions=(
         "Create and validate .deployer.yml files, then plan, deploy, inspect, "
         "and redeploy projects. This server cannot manage profiles, tokens, "
-        "credentials, identities, devices, pools, or global settings."
+        "credentials, identities, devices, pools, DNS infrastructure, arbitrary "
+        "DNS records, or global settings. Deployment tools may automatically "
+        "manage only the A/AAAA records owned by their gateway routes."
     ),
 )
 
@@ -186,7 +188,12 @@ def plan_deployer_project(
     git_ref: str | None = None,
     auto_redeploy_enabled: bool = False,
 ) -> dict[str, Any]:
-    """Build a non-mutating deployment plan and detect target/domain conflicts."""
+    """Build a non-mutating deployment plan.
+
+    The plan detects target/domain conflicts and reports the managed DNS zone,
+    exact route-owned A/AAAA values, and resolved ACME challenge for every
+    route binding.
+    """
     payload = _deployment_payload(
         project_path,
         target_type=target_type,
@@ -218,7 +225,15 @@ def deploy_deployer_project(
     Route bindings use manifest route names plus domain/TLS settings, for
     example: [{"route_name": "web", "domain": "app.example.com",
     "certificate_mode": "letsencrypt", "http_mode": "redirect_to_https",
-    "certificate_email": "ops@example.com"}].
+    "certificate_email": "ops@example.com", "acme_challenge_mode": "auto"}].
+    A domain inside a managed zone automatically receives route-owned A/AAAA
+    records pointing to Deployer's local primary. They move with domain changes
+    and are removed with the route without touching manual values. This scoped
+    side effect is not general DNS administration.
+
+    `auto` uses DNS-01 only for an active Deployer-managed DNS zone and keeps
+    HTTP-01 for domains using external DNS. Explicit `http-01` and `dns-01`
+    are also accepted.
     """
     payload = _deployment_payload(
         project_path,
@@ -247,7 +262,7 @@ def list_deployer_deployments() -> list[dict[str, Any]]:
 
 @mcp.tool()
 def get_deployer_deployment_status(deployment_id: str) -> dict[str, Any]:
-    """Read redacted runtime status for an owned deployment."""
+    """Read redacted runtime, routes, managed zones, and route-owned DNS records."""
     return _client().request("GET", f"/mcp/deployments/{deployment_id}")
 
 
