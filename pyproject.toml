@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deployer-mcp"
+version = "0.1.0"
+description = "Scoped MCP server for project deployments through Deployer"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.27,<1",
+  "mcp==1.28.1",
+  "PyYAML>=6,<7",
+]
+
+[project.scripts]
+deployer-mcp = "deployer_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/hajda14/deployer-mcp"
+Repository = "https://github.com/hajda14/deployer-mcp"
+Issues = "https://github.com/hajda14/deployer-mcp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deployer_mcp"]
