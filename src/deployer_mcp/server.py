@@ -65,8 +65,11 @@ def _deployment_payload(
     target_type: Literal["device", "pool"],
     target_id: str,
     route_bindings: list[dict[str, Any]] | None,
+    certificate_bindings: list[dict[str, Any]] | None,
+    environment_variables: list[dict[str, Any]] | None,
     stack_name: str | None,
     source_type: Literal["manual", "git"],
+    git_provider: Literal["github", "gitlab", "azure_devops", "generic"] | None,
     git_repository_url: str | None,
     git_ref: str | None,
     auto_redeploy_enabled: bool,
@@ -74,9 +77,13 @@ def _deployment_payload(
     _, manifest_content, compose_content = _read_project(project_path)
     payload: dict[str, Any] = {
         "manifest_content": manifest_content,
-        "compose_content": compose_content if source_type == "manual" else None,
+        # Git deployments still send the local Compose document for validation
+        # and non-mutating pool/build planning. The API does not persist it as
+        # the runtime source for Git deployments.
+        "compose_content": compose_content,
         "stack_name": stack_name,
         "source_type": source_type,
+        "git_provider": git_provider,
         "git_repository_url": git_repository_url,
         "git_ref": git_ref,
         "auto_redeploy_enabled": auto_redeploy_enabled,
@@ -84,6 +91,8 @@ def _deployment_payload(
         "device_id": target_id if target_type == "device" else None,
         "pool_id": target_id if target_type == "pool" else None,
         "routes": route_bindings or [],
+        "certificate_bindings": certificate_bindings or [],
+        "environment_variables": environment_variables,
     }
     return payload
 
@@ -108,13 +117,19 @@ def create_deployer_manifest(
     project_name: str | None = None,
     ports: list[dict[str, Any]] | None = None,
     routes: list[dict[str, Any]] | None = None,
+    workloads: list[dict[str, Any]] | None = None,
+    certificate_mounts: list[dict[str, Any]] | None = None,
     overwrite: bool = False,
 ) -> dict[str, Any]:
     """Create a validated .deployer.yml in an existing local project.
 
     `ports` entries describe named internal service ports. `routes` entries
-    connect a manifest route name to a Compose service and port. Domains and
-    TLS settings are supplied later as deployment route bindings.
+    connect a manifest route name to a Compose service and port. `workloads`
+    optionally define Swarm mode, replicas, resources, and placement. Domains
+    and TLS settings are supplied later as deployment route bindings.
+    `certificate_mounts` declares a Compose service and read-only in-container
+    certificate path, plus an optional private-key path. It never contains
+    certificate or key material.
     """
     root = _project_root(project_path)
     manifest_path = root / ".deployer.yml"
@@ -136,6 +151,8 @@ def create_deployer_manifest(
         },
         "ports": ports or [],
         "routes": routes or [],
+        "workloads": workloads or [],
+        "certificate_mounts": certificate_mounts or [],
     }
     manifest_content = yaml.safe_dump(manifest, sort_keys=False)
     validation = _client().request(
@@ -182,8 +199,11 @@ def plan_deployer_project(
     target_type: Literal["device", "pool"],
     target_id: str,
     route_bindings: list[dict[str, Any]] | None = None,
+    certificate_bindings: list[dict[str, Any]] | None = None,
+    environment_variables: list[dict[str, Any]] | None = None,
     stack_name: str | None = None,
     source_type: Literal["manual", "git"] = "manual",
+    git_provider: Literal["github", "gitlab", "azure_devops", "generic"] | None = None,
     git_repository_url: str | None = None,
     git_ref: str | None = None,
     auto_redeploy_enabled: bool = False,
@@ -199,8 +219,11 @@ def plan_deployer_project(
         target_type=target_type,
         target_id=target_id,
         route_bindings=route_bindings,
+        certificate_bindings=certificate_bindings,
+        environment_variables=environment_variables,
         stack_name=stack_name,
         source_type=source_type,
+        git_provider=git_provider,
         git_repository_url=git_repository_url,
         git_ref=git_ref,
         auto_redeploy_enabled=auto_redeploy_enabled,
@@ -214,8 +237,11 @@ def deploy_deployer_project(
     target_type: Literal["device", "pool"],
     target_id: str,
     route_bindings: list[dict[str, Any]] | None = None,
+    certificate_bindings: list[dict[str, Any]] | None = None,
+    environment_variables: list[dict[str, Any]] | None = None,
     stack_name: str | None = None,
     source_type: Literal["manual", "git"] = "manual",
+    git_provider: Literal["github", "gitlab", "azure_devops", "generic"] | None = None,
     git_repository_url: str | None = None,
     git_ref: str | None = None,
     auto_redeploy_enabled: bool = False,
@@ -234,14 +260,33 @@ def deploy_deployer_project(
     `auto` uses DNS-01 only for an active Deployer-managed DNS zone and keeps
     HTTP-01 for domains using external DNS. Explicit `http-01` and `dns-01`
     are also accepted.
+
+    For Git sources, `git_provider` may be github, gitlab, azure_devops, or
+    generic. Omit it to infer the provider from common hosted repository URLs.
+    Private repository credentials must already be connected in the Deployer
+    web UI; this MCP server cannot read or change them.
+
+    `certificate_bindings` may select an existing identity returned by
+    list_deployment_options for a named manifest certificate mount, for
+    example [{"mount_name": "mail-tls", "identity_id": "..."}]. Private key
+    material is never returned to MCP; Deployer provisions it directly to the
+    declared service on the target.
+
+    `environment_variables` contains deployment-only values such as
+    [{"name": "DATABASE_PASSWORD", "value": "...", "is_secret": true}].
+    Deployer encrypts every value. Secret values are never returned by MCP.
+    Omit the argument on an update to preserve the current set.
     """
     payload = _deployment_payload(
         project_path,
         target_type=target_type,
         target_id=target_id,
         route_bindings=route_bindings,
+        certificate_bindings=certificate_bindings,
+        environment_variables=environment_variables,
         stack_name=stack_name,
         source_type=source_type,
+        git_provider=git_provider,
         git_repository_url=git_repository_url,
         git_ref=git_ref,
         auto_redeploy_enabled=auto_redeploy_enabled,
