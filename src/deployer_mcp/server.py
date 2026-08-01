@@ -326,6 +326,27 @@ def get_deployer_deployment_status(deployment_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def list_deployer_build_jobs(deployment_id: str) -> list[dict[str, Any]]:
+    """List the latest persisted build attempts for an owned deployment."""
+    return _client().request(
+        "GET",
+        f"/mcp/deployments/{deployment_id}/build-jobs",
+    )
+
+
+@mcp.tool()
+def get_deployer_build_job(
+    deployment_id: str,
+    build_job_id: str,
+) -> dict[str, Any]:
+    """Read one persisted build result with bounded credential-redacted logs."""
+    return _client().request(
+        "GET",
+        f"/mcp/deployments/{deployment_id}/build-jobs/{build_job_id}",
+    )
+
+
+@mcp.tool()
 def get_deployer_container_logs(
     deployment_id: str,
     container_id: str,

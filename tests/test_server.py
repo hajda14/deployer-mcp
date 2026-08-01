@@ -3,7 +3,11 @@ from __future__ import annotations
 from unittest import TestCase
 from unittest.mock import patch
 
-from deployer_mcp.server import _deployment_payload
+from deployer_mcp.server import (
+    _deployment_payload,
+    get_deployer_build_job,
+    list_deployer_build_jobs,
+)
 
 
 PROJECT_CONTENT = (None, "version: 1\n", "services: {}\n")
@@ -34,3 +38,29 @@ class DeploymentPayloadTests(TestCase):
 
     def test_payload_includes_explicit_image_strategy(self) -> None:
         self.assertEqual(_payload("deployer")["image_strategy"], "deployer")
+
+    @patch("deployer_mcp.server._client")
+    def test_build_history_tools_use_owner_scoped_mcp_endpoints(self, client) -> None:
+        api = client.return_value
+        api.request.side_effect = [[{"id": "job-id"}], {"id": "job-id"}]
+
+        self.assertEqual(
+            list_deployer_build_jobs("deployment-id"),
+            [{"id": "job-id"}],
+        )
+        self.assertEqual(
+            get_deployer_build_job("deployment-id", "job-id"),
+            {"id": "job-id"},
+        )
+
+        self.assertEqual(
+            api.request.call_args_list[0].args,
+            ("GET", "/mcp/deployments/deployment-id/build-jobs"),
+        )
+        self.assertEqual(
+            api.request.call_args_list[1].args,
+            (
+                "GET",
+                "/mcp/deployments/deployment-id/build-jobs/job-id",
+            ),
+        )
