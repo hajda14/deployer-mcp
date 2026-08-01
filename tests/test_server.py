@@ -8,6 +8,8 @@ from deployer_mcp.server import (
     cancel_deployer_build_job,
     get_deployer_build_job,
     list_deployer_build_jobs,
+    list_deployer_releases,
+    rollback_deployer_release,
 )
 
 
@@ -83,4 +85,28 @@ class DeploymentPayloadTests(TestCase):
         self.assertEqual(
             api.request.call_args_list[2].kwargs["json"],
             {"confirmation": "cancel-build-job"},
+        )
+
+    @patch("deployer_mcp.server._client")
+    def test_release_tools_use_owner_scoped_mcp_endpoints(self, client) -> None:
+        api = client.return_value
+        api.request.side_effect = [
+            [{"id": "release-id"}],
+            {"status": "deployed"},
+        ]
+
+        self.assertEqual(
+            list_deployer_releases("deployment-id"),
+            [{"id": "release-id"}],
+        )
+        self.assertEqual(
+            rollback_deployer_release("deployment-id", "release-id"),
+            {"status": "deployed"},
+        )
+        self.assertEqual(
+            api.request.call_args_list[1].kwargs,
+            {
+                "json": {"confirmation": "rollback-deployment-release"},
+                "timeout": 600,
+            },
         )

@@ -360,6 +360,29 @@ def cancel_deployer_build_job(
 
 
 @mcp.tool()
+def list_deployer_releases(deployment_id: str) -> list[dict[str, Any]]:
+    """List immutable digest releases for an owned deployment."""
+    return _client().request(
+        "GET",
+        f"/mcp/deployments/{deployment_id}/releases",
+    )
+
+
+@mcp.tool()
+def rollback_deployer_release(
+    deployment_id: str,
+    release_id: str,
+) -> dict[str, Any]:
+    """Activate an older immutable release without rebuilding images."""
+    return _client().request(
+        "POST",
+        f"/mcp/deployments/{deployment_id}/releases/{release_id}/rollback",
+        json={"confirmation": "rollback-deployment-release"},
+        timeout=600,
+    )
+
+
+@mcp.tool()
 def get_deployer_container_logs(
     deployment_id: str,
     container_id: str,

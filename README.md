@@ -51,6 +51,8 @@ credential-redacted worker logs. These tools cannot read another user's jobs.
 `cancel_deployer_build_job` records and cooperatively stops one owned
 queued/running build before target rollout. Build summaries include structured
 cache-use and cached/completed step counts.
+`list_deployer_releases` returns exact activated service digests and
+`rollback_deployer_release` reactivates an older release without rebuilding.
 
 Applications that terminate TLS themselves, such as SMTP or IMAP servers, may
 declare `certificate_mounts` in `.deployer.yml`. Each entry names a Compose
@@ -99,7 +101,7 @@ For Let's Encrypt route bindings, set `acme_challenge_mode` to:
 ```bash
 python3 -m venv "$HOME/.local/share/deployer-mcp"
 "$HOME/.local/share/deployer-mcp/bin/python" -m pip install \
-  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.1.4"
+  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.1.5"
 ```
 
 Create an `MCP only` or `REST API + MCP` token in Deployer’s Profile Settings,
