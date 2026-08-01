@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from deployer_mcp.server import (
     _deployment_payload,
+    cancel_deployer_build_job,
     get_deployer_build_job,
     list_deployer_build_jobs,
 )
@@ -42,7 +43,11 @@ class DeploymentPayloadTests(TestCase):
     @patch("deployer_mcp.server._client")
     def test_build_history_tools_use_owner_scoped_mcp_endpoints(self, client) -> None:
         api = client.return_value
-        api.request.side_effect = [[{"id": "job-id"}], {"id": "job-id"}]
+        api.request.side_effect = [
+            [{"id": "job-id"}],
+            {"id": "job-id"},
+            {"id": "job-id", "cancel_requested_at": "now"},
+        ]
 
         self.assertEqual(
             list_deployer_build_jobs("deployment-id"),
@@ -51,6 +56,10 @@ class DeploymentPayloadTests(TestCase):
         self.assertEqual(
             get_deployer_build_job("deployment-id", "job-id"),
             {"id": "job-id"},
+        )
+        self.assertEqual(
+            cancel_deployer_build_job("deployment-id", "job-id"),
+            {"id": "job-id", "cancel_requested_at": "now"},
         )
 
         self.assertEqual(
@@ -63,4 +72,15 @@ class DeploymentPayloadTests(TestCase):
                 "GET",
                 "/mcp/deployments/deployment-id/build-jobs/job-id",
             ),
+        )
+        self.assertEqual(
+            api.request.call_args_list[2].args,
+            (
+                "POST",
+                "/mcp/deployments/deployment-id/build-jobs/job-id/cancel",
+            ),
+        )
+        self.assertEqual(
+            api.request.call_args_list[2].kwargs["json"],
+            {"confirmation": "cancel-build-job"},
         )

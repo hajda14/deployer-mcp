@@ -347,6 +347,19 @@ def get_deployer_build_job(
 
 
 @mcp.tool()
+def cancel_deployer_build_job(
+    deployment_id: str,
+    build_job_id: str,
+) -> dict[str, Any]:
+    """Cancel one queued/running build owned by the MCP token's user."""
+    return _client().request(
+        "POST",
+        f"/mcp/deployments/{deployment_id}/build-jobs/{build_job_id}/cancel",
+        json={"confirmation": "cancel-build-job"},
+    )
+
+
+@mcp.tool()
 def get_deployer_container_logs(
     deployment_id: str,
     container_id: str,

@@ -2,7 +2,8 @@
 
 This stdio MCP server creates and validates `.deployer.yml`, plans deployments,
 deploys projects with domains/TLS, and reads owned deployment status, persisted
-build history, credential-redacted build logs, and container logs.
+build history, structured cache results, cooperative build cancellation,
+credential-redacted build logs, and container logs.
 It has no tools for profiles, users, tokens, credentials, infrastructure
 administration, authoritative DNS administration, arbitrary/manual DNS records,
 device-agent installation, public TCP endpoint administration, or global
@@ -47,6 +48,9 @@ immutable per-service image digests resolved by a Deployer build.
 `list_deployer_build_jobs` returns the latest persisted attempts for an owned
 deployment, while `get_deployer_build_job` returns one attempt with its bounded,
 credential-redacted worker logs. These tools cannot read another user's jobs.
+`cancel_deployer_build_job` records and cooperatively stops one owned
+queued/running build before target rollout. Build summaries include structured
+cache-use and cached/completed step counts.
 
 Applications that terminate TLS themselves, such as SMTP or IMAP servers, may
 declare `certificate_mounts` in `.deployer.yml`. Each entry names a Compose
@@ -95,7 +99,7 @@ For Let's Encrypt route bindings, set `acme_challenge_mode` to:
 ```bash
 python3 -m venv "$HOME/.local/share/deployer-mcp"
 "$HOME/.local/share/deployer-mcp/bin/python" -m pip install \
-  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.1.3"
+  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.1.4"
 ```
 
 Create an `MCP only` or `REST API + MCP` token in Deployer’s Profile Settings,
