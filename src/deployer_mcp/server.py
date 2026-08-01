@@ -73,6 +73,7 @@ def _deployment_payload(
     git_repository_url: str | None,
     git_ref: str | None,
     auto_redeploy_enabled: bool,
+    image_strategy: Literal["deployer", "target", "prebuilt"] | None,
 ) -> dict[str, Any]:
     _, manifest_content, compose_content = _read_project(project_path)
     payload: dict[str, Any] = {
@@ -94,6 +95,8 @@ def _deployment_payload(
         "certificate_bindings": certificate_bindings or [],
         "environment_variables": environment_variables,
     }
+    if image_strategy is not None:
+        payload["image_strategy"] = image_strategy
     return payload
 
 
@@ -207,6 +210,7 @@ def plan_deployer_project(
     git_repository_url: str | None = None,
     git_ref: str | None = None,
     auto_redeploy_enabled: bool = False,
+    image_strategy: Literal["deployer", "target", "prebuilt"] | None = None,
 ) -> dict[str, Any]:
     """Build a non-mutating deployment plan.
 
@@ -227,6 +231,7 @@ def plan_deployer_project(
         git_repository_url=git_repository_url,
         git_ref=git_ref,
         auto_redeploy_enabled=auto_redeploy_enabled,
+        image_strategy=image_strategy,
     )
     return _client().request("POST", "/mcp/deployments/plan", json=payload)
 
@@ -245,6 +250,7 @@ def deploy_deployer_project(
     git_repository_url: str | None = None,
     git_ref: str | None = None,
     auto_redeploy_enabled: bool = False,
+    image_strategy: Literal["deployer", "target", "prebuilt"] | None = None,
 ) -> dict[str, Any]:
     """Create or update an owned deployment and execute it.
 
@@ -276,6 +282,13 @@ def deploy_deployer_project(
     [{"name": "DATABASE_PASSWORD", "value": "...", "is_secret": true}].
     Deployer encrypts every value. Secret values are never returned by MCP.
     Omit the argument on an update to preserve the current set.
+
+    `image_strategy` explicitly chooses where Compose build services are
+    prepared: `deployer` uses the dedicated BuildKit worker and built-in
+    registry, `target` builds on the selected device or one pool manager, and
+    `prebuilt` skips builds and requires pullable Compose images. Omit it when
+    updating a deployment to preserve its current strategy; new deployments
+    default to `target`.
     """
     payload = _deployment_payload(
         project_path,
@@ -290,6 +303,7 @@ def deploy_deployer_project(
         git_repository_url=git_repository_url,
         git_ref=git_ref,
         auto_redeploy_enabled=auto_redeploy_enabled,
+        image_strategy=image_strategy,
     )
     return _client().request(
         "POST",

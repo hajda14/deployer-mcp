@@ -4,7 +4,12 @@ This stdio MCP server creates and validates `.deployer.yml`, plans deployments,
 deploys projects with domains/TLS, and reads owned deployment status and logs.
 It has no tools for profiles, users, tokens, credentials, infrastructure
 administration, authoritative DNS administration, arbitrary/manual DNS records,
-or global settings.
+device-agent installation, public TCP endpoint administration, or global
+settings.
+
+MCP may validate portable `tcp_routes` in `.deployer.yml`, but an administrator
+must enable the outbound agent and bind those route names to environment-
+specific domains and public ports in the Deployer web UI or REST API.
 
 When a route domain belongs to a Deployer-managed zone, deployment automatically
 publishes the route-owned `A` and/or `AAAA` values shown by the planning tool.
@@ -24,6 +29,20 @@ rollback, and require either `workloads[].healthcheck` or a Compose healthcheck.
 Pool routes automatically fail over across eligible Swarm nodes.
 Run `docker login <registry>` on a manager before the first such deployment.
 Registry passwords are intentionally not stored by Deployer.
+
+Both `plan_deployer_project` and `deploy_deployer_project` accept an explicit
+`image_strategy`:
+
+- `deployer` builds Git Compose services once in Deployer's separate build
+  worker, pushes multi-platform images to the built-in registry, and deploys
+  immutable digests.
+- `target` builds on the selected device or on one eligible Swarm manager.
+- `prebuilt` skips builds and pulls the images already declared by Compose.
+
+New deployments default to `target` for compatibility with existing MCP
+clients. Omitting `image_strategy` while updating an existing stack preserves
+its current strategy. Deployment status returns the selected strategy and any
+immutable per-service image digests resolved by a Deployer build.
 
 Applications that terminate TLS themselves, such as SMTP or IMAP servers, may
 declare `certificate_mounts` in `.deployer.yml`. Each entry names a Compose
