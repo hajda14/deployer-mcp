@@ -4,13 +4,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from deployer_mcp.client import DeployerClient
 
 
-mcp = FastMCP(
+mcp = MCPServer(
     "deployer",
+    version="0.2.0",
     instructions=(
         "Create and validate .deployer.yml files, then plan, deploy, inspect, "
         "and redeploy projects. This server cannot manage profiles, tokens, "
@@ -216,7 +217,9 @@ def plan_deployer_project(
 
     The plan detects target/domain conflicts and reports the managed DNS zone,
     exact route-owned A/AAAA values, and resolved ACME challenge for every
-    route binding.
+    route binding. A binding may include `proxy_headers`, for example
+    [{"name": "Upgrade", "value": "$http_upgrade"},
+    {"name": "Connection", "value": "$connection_upgrade"}].
     """
     payload = _deployment_payload(
         project_path,
@@ -257,7 +260,9 @@ def deploy_deployer_project(
     Route bindings use manifest route names plus domain/TLS settings, for
     example: [{"route_name": "web", "domain": "app.example.com",
     "certificate_mode": "letsencrypt", "http_mode": "redirect_to_https",
-    "certificate_email": "ops@example.com", "acme_challenge_mode": "auto"}].
+    "certificate_email": "ops@example.com", "acme_challenge_mode": "auto",
+    "proxy_headers": [{"name": "Upgrade", "value": "$http_upgrade"},
+    {"name": "Connection", "value": "$connection_upgrade"}]}].
     A domain inside a managed zone automatically receives route-owned A/AAAA
     records pointing to Deployer's local primary. They move with domain changes
     and are removed with the route without touching manual values. This scoped

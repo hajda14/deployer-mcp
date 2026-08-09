@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from unittest import TestCase
+import sys
+from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import patch
+
+from mcp import StdioServerParameters
+from mcp.client import Client
+from mcp.client.stdio import stdio_client
 
 from deployer_mcp.server import (
     _deployment_payload,
@@ -9,6 +14,7 @@ from deployer_mcp.server import (
     get_deployer_build_job,
     list_deployer_build_jobs,
     list_deployer_releases,
+    mcp,
     rollback_deployer_release,
 )
 
@@ -16,13 +22,39 @@ from deployer_mcp.server import (
 PROJECT_CONTENT = (None, "version: 1\n", "services: {}\n")
 
 
-def _payload(image_strategy: str | None) -> dict[str, object]:
+class ProtocolV2Tests(IsolatedAsyncioTestCase):
+    async def test_server_negotiates_current_protocol_and_lists_tools(self) -> None:
+        async with Client(mcp) as client:
+            self.assertEqual(str(client.protocol_version), "2026-07-28")
+            result = await client.list_tools()
+
+        tool_names = {tool.name for tool in result.tools}
+        self.assertIn("plan_deployer_project", tool_names)
+        self.assertIn("deploy_deployer_project", tool_names)
+
+    async def test_server_still_negotiates_legacy_protocol(self) -> None:
+        async with Client(mcp, mode="legacy") as client:
+            self.assertEqual(str(client.protocol_version), "2025-11-25")
+
+    async def test_stdio_entrypoint_negotiates_current_protocol(self) -> None:
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "deployer_mcp"],
+        )
+        async with Client(stdio_client(parameters)) as client:
+            self.assertEqual(str(client.protocol_version), "2026-07-28")
+
+
+def _payload(
+    image_strategy: str | None,
+    route_bindings: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
     with patch("deployer_mcp.server._read_project", return_value=PROJECT_CONTENT):
         return _deployment_payload(
             "/tmp/example",
             target_type="device",
             target_id="device-id",
-            route_bindings=None,
+            route_bindings=route_bindings,
             certificate_bindings=None,
             environment_variables=None,
             stack_name="example",
@@ -41,6 +73,18 @@ class DeploymentPayloadTests(TestCase):
 
     def test_payload_includes_explicit_image_strategy(self) -> None:
         self.assertEqual(_payload("deployer")["image_strategy"], "deployer")
+
+    def test_payload_preserves_route_proxy_headers(self) -> None:
+        route = {
+            "route_name": "web",
+            "domain": "app.example.com",
+            "proxy_headers": [
+                {"name": "Upgrade", "value": "$http_upgrade"},
+                {"name": "Connection", "value": "$connection_upgrade"},
+            ],
+        }
+
+        self.assertEqual(_payload(None, [route])["routes"], [route])
 
     @patch("deployer_mcp.server._client")
     def test_build_history_tools_use_owner_scoped_mcp_endpoints(self, client) -> None:

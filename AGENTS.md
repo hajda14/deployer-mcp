@@ -6,7 +6,8 @@ them; the parent repository records only the submodule commit.
 
 ## Scope
 
-`src/deployer_mcp/server.py` exposes narrow FastMCP tools that:
+`src/deployer_mcp/server.py` exposes narrow `MCPServer` tools using the stable
+MCP Python SDK 2.x and protocol revision `2026-07-28` that:
 
 - create and validate a local `.deployer.yml`;
 - list deployment targets and public TLS identity metadata;
@@ -50,4 +51,3 @@ Install editable for local protocol testing when needed:
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
 ```
-
