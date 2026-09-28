@@ -84,6 +84,13 @@ updating a deployment to preserve the current set. These values become
 container environment variables and remain inspectable by authorized Docker
 administrators; use certificate mounts for private identity files.
 
+Use `upsert_environment_variable` to add or change one value on an existing
+deployment without replacing sibling variables. The operation encrypts the
+value, performs a redeploy, and records an immutable environment snapshot for
+rollback. Responses show only the name and whether a value is set for secrets.
+`WORLD_RUNTIME_SHARED_SECRET` must be marked secret and contain at least 32
+ASCII characters.
+
 Git deployments may set `git_provider` to `github`, `gitlab`,
 `azure_devops`, or `generic`; common hosted repository URLs are inferred when
 it is omitted. GitHub uses the user's OAuth connection. GitLab, Azure DevOps,

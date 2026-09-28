@@ -409,6 +409,26 @@ def redeploy_deployer_project(deployment_id: str) -> dict[str, Any]:
     )
 
 
+@mcp.tool()
+def upsert_environment_variable(
+    deployment_id: str,
+    name: str,
+    value: str,
+    is_secret: bool = True,
+) -> dict[str, Any]:
+    """Add or update one encrypted environment variable on an owned deployment.
+
+    Other environment variables are preserved. Secret values are write-only;
+    the response includes only the name and whether a value is set. The
+    deployment is redeployed and a new immutable environment release is saved.
+    """
+    return _client().request(
+        "PUT",
+        f"/mcp/deployments/{deployment_id}/environment-variables",
+        json={"name": name, "value": value, "is_secret": is_secret},
+    )
+
+
 def main() -> None:
     mcp.run(transport="stdio")
 

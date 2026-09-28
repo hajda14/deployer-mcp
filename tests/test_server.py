@@ -16,6 +16,7 @@ from deployer_mcp.server import (
     list_deployer_releases,
     mcp,
     rollback_deployer_release,
+    upsert_environment_variable,
 )
 
 
@@ -31,6 +32,7 @@ class ProtocolV2Tests(IsolatedAsyncioTestCase):
         tool_names = {tool.name for tool in result.tools}
         self.assertIn("plan_deployer_project", tool_names)
         self.assertIn("deploy_deployer_project", tool_names)
+        self.assertIn("upsert_environment_variable", tool_names)
 
     async def test_server_still_negotiates_legacy_protocol(self) -> None:
         async with Client(mcp, mode="legacy") as client:
@@ -85,6 +87,32 @@ class DeploymentPayloadTests(TestCase):
         }
 
         self.assertEqual(_payload(None, [route])["routes"], [route])
+
+    @patch("deployer_mcp.server._client")
+    def test_environment_upsert_calls_single_variable_mcp_operation(self, client) -> None:
+        api = client.return_value
+        api.request.return_value = {
+            "name": "DATABASE_PASSWORD",
+            "is_secret": True,
+            "has_value": True,
+        }
+
+        result = upsert_environment_variable(
+            "deployment-id",
+            "DATABASE_PASSWORD",
+            "new-secret-value",
+        )
+
+        self.assertEqual(result["has_value"], True)
+        api.request.assert_called_once_with(
+            "PUT",
+            "/mcp/deployments/deployment-id/environment-variables",
+            json={
+                "name": "DATABASE_PASSWORD",
+                "value": "new-secret-value",
+                "is_secret": True,
+            },
+        )
 
     @patch("deployer_mcp.server._client")
     def test_build_history_tools_use_owner_scoped_mcp_endpoints(self, client) -> None:
