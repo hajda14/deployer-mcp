@@ -156,6 +156,30 @@ class PrivatePreviewTests(TestCase):
         with self.assertRaises(ValueError):
             enable_deployer_private_preview("../other-deployment")
 
+    @patch("deployer_mcp.server._client")
+    def test_enable_private_preview_can_publish_a_running_development_session(self, client) -> None:
+        api = client.return_value
+        api.request.return_value = {
+            "preview_access": {"enabled": True, "protected_domains": ["app.example.com"]},
+            "development_session": {
+                "id": "session-id",
+                "preview_url": "https://app.example.com/.deployer-dev/session-id/",
+            },
+        }
+
+        result = enable_deployer_private_preview("deployment-id", "session-id")
+
+        self.assertIn("development_session", result)
+        api.request.assert_called_once_with(
+            "POST",
+            "/mcp/deployments/deployment-id/preview-access/enable",
+            json={"development_session_id": "session-id"},
+        )
+
+    def test_enable_private_preview_rejects_path_like_session_id(self) -> None:
+        with self.assertRaises(ValueError):
+            enable_deployer_private_preview("deployment-id", "../other-session")
+
 
 class DevelopmentSessionTests(TestCase):
     def test_compose_path_must_be_relative_and_confined(self) -> None:

@@ -12,7 +12,7 @@ from deployer_mcp.client import DeployerClient
 
 mcp = MCPServer(
     "deployer",
-    version="0.2.3",
+    version="0.2.4",
     instructions=(
         "Create and validate .deployer.yml files, then plan, deploy, inspect, "
         "and redeploy projects, and enable owner-scoped Private Preview on an "
@@ -479,7 +479,10 @@ def upsert_environment_variable(
 
 
 @mcp.tool()
-def enable_deployer_private_preview(deployment_id: str) -> dict[str, Any]:
+def enable_deployer_private_preview(
+    deployment_id: str,
+    development_session_id: str | None = None,
+) -> dict[str, Any]:
     """Enable Private Preview for an owned deployment using its current access mode.
 
     Requires an administrator MCP token and an owned deployment with a route
@@ -487,13 +490,21 @@ def enable_deployer_private_preview(deployment_id: str) -> dict[str, Any]:
     review-password policy and never returns a password, preview cookie, or
     owner credential. It gates every listed deployment domain, including the
     production URL, so inspect `protected_domains` before enabling it. Gateway
-    configuration is synchronized before success.
+    configuration is synchronized before success. Pass an existing running
+    `development_session_id` to publish that session at a session-specific HTTPS
+    preview URL without rebuilding or restarting its Compose project.
     """
     deployment_id = _safe_resource_id(deployment_id, "deployment_id")
+    payload: dict[str, str] = {}
+    if development_session_id is not None:
+        payload["development_session_id"] = _safe_resource_id(
+            development_session_id,
+            "development_session_id",
+        )
     return _client().request(
         "POST",
         f"/mcp/deployments/{deployment_id}/preview-access/enable",
-        json={},
+        json=payload,
     )
 
 

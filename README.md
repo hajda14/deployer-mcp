@@ -100,6 +100,10 @@ enabled state, configured-password status, owner ID, and protected domains.
 Private Preview gates every listed deployment domain, including its ordinary
 production URL. Review the returned `protected_domains` before enabling it. The
 operation does not create domains or change route/TLS settings.
+Pass `development_session_id` to also publish an existing running session at a
+session-specific HTTPS path and receive its preview URL without rebuilding or
+restarting the session. The response includes the session DTO without any
+attach or sync token.
 
 Development sessions are temporary, owner-scoped environments attached to an
 existing deployment. Use `list_deployer_dev_session_runners` to see authorized
@@ -166,7 +170,7 @@ storage; do not place passwords or API tokens in them.
 ```bash
 python3 -m venv "$HOME/.local/share/deployer-mcp"
 "$HOME/.local/share/deployer-mcp/bin/python" -m pip install \
-  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.3"
+  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.4"
 ```
 
 Create an `MCP only` or `REST API + MCP` token in Deployer’s Profile Settings,
