@@ -13,6 +13,7 @@ from deployer_mcp.server import (
     _safe_relative_compose_file,
     cancel_deployer_build_job,
     create_deployer_dev_session,
+    enable_deployer_private_preview,
     get_deployer_build_job,
     get_deployer_dev_session,
     get_deployer_dev_session_logs,
@@ -40,6 +41,7 @@ class ProtocolV2Tests(IsolatedAsyncioTestCase):
         self.assertIn("plan_deployer_project", tool_names)
         self.assertIn("deploy_deployer_project", tool_names)
         self.assertIn("upsert_environment_variable", tool_names)
+        self.assertIn("enable_deployer_private_preview", tool_names)
         self.assertIn("create_deployer_dev_session", tool_names)
         self.assertIn("list_deployer_dev_session_runners", tool_names)
         self.assertIn("list_deployer_dev_sessions", tool_names)
@@ -126,6 +128,33 @@ class DeploymentPayloadTests(TestCase):
                 "is_secret": True,
             },
         )
+
+
+class PrivatePreviewTests(TestCase):
+    @patch("deployer_mcp.server._client")
+    def test_enable_private_preview_uses_owner_scoped_mcp_endpoint(self, client) -> None:
+        api = client.return_value
+        api.request.return_value = {
+            "enabled": True,
+            "mode": "password",
+            "password_configured": True,
+            "owner_user_id": "owner-id",
+            "protected_domains": ["app.example.com"],
+        }
+
+        result = enable_deployer_private_preview("deployment-id")
+
+        self.assertTrue(result["enabled"])
+        self.assertTrue(result["password_configured"])
+        api.request.assert_called_once_with(
+            "POST",
+            "/mcp/deployments/deployment-id/preview-access/enable",
+            json={},
+        )
+
+    def test_enable_private_preview_rejects_path_like_deployment_id(self) -> None:
+        with self.assertRaises(ValueError):
+            enable_deployer_private_preview("../other-deployment")
 
 
 class DevelopmentSessionTests(TestCase):

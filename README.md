@@ -91,6 +91,16 @@ rollback. Responses show only the name and whether a value is set for secrets.
 `WORLD_RUNTIME_SHARED_SECRET` must be marked secret and contain at least 32
 ASCII characters.
 
+Use `enable_deployer_private_preview` to enable the existing deployment's
+Private Preview policy through an MCP-only token. The token must belong to an
+administrator and the deployment. At least one clearnet route must use HTTPS
+or redirect HTTP to HTTPS. The operation preserves the current owner/password
+mode and any configured review-password hash; it returns only the mode,
+enabled state, configured-password status, owner ID, and protected domains.
+Private Preview gates every listed deployment domain, including its ordinary
+production URL. Review the returned `protected_domains` before enabling it. The
+operation does not create domains or change route/TLS settings.
+
 Development sessions are temporary, owner-scoped environments attached to an
 existing deployment. Use `list_deployer_dev_session_runners` to see authorized
 SSH devices that can host the session, then pass the selected ID as the optional
@@ -156,7 +166,7 @@ storage; do not place passwords or API tokens in them.
 ```bash
 python3 -m venv "$HOME/.local/share/deployer-mcp"
 "$HOME/.local/share/deployer-mcp/bin/python" -m pip install \
-  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.1"
+  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.3"
 ```
 
 Create an `MCP only` or `REST API + MCP` token in Deployer’s Profile Settings,

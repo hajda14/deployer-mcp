@@ -12,10 +12,11 @@ from deployer_mcp.client import DeployerClient
 
 mcp = MCPServer(
     "deployer",
-    version="0.2.1",
+    version="0.2.3",
     instructions=(
         "Create and validate .deployer.yml files, then plan, deploy, inspect, "
-        "and redeploy projects. This server cannot manage profiles, tokens, "
+        "and redeploy projects, and enable owner-scoped Private Preview on an "
+        "existing HTTPS deployment route. This server cannot manage profiles, tokens, "
         "credentials, identities, devices, pools, DNS infrastructure, arbitrary "
         "DNS records, or global settings. Development sessions are scoped to "
         "deployments owned by the token's user. Deployment tools may "
@@ -474,6 +475,25 @@ def upsert_environment_variable(
         "PUT",
         f"/mcp/deployments/{deployment_id}/environment-variables",
         json={"name": name, "value": value, "is_secret": is_secret},
+    )
+
+
+@mcp.tool()
+def enable_deployer_private_preview(deployment_id: str) -> dict[str, Any]:
+    """Enable Private Preview for an owned deployment using its current access mode.
+
+    Requires an administrator MCP token and an owned deployment with a route
+    that uses HTTPS or redirects HTTP to HTTPS. This preserves any existing
+    review-password policy and never returns a password, preview cookie, or
+    owner credential. It gates every listed deployment domain, including the
+    production URL, so inspect `protected_domains` before enabling it. Gateway
+    configuration is synchronized before success.
+    """
+    deployment_id = _safe_resource_id(deployment_id, "deployment_id")
+    return _client().request(
+        "POST",
+        f"/mcp/deployments/{deployment_id}/preview-access/enable",
+        json={},
     )
 
 
