@@ -194,6 +194,29 @@ class DevelopmentSessionTests(TestCase):
         )
 
     @patch("deployer_mcp.server._client")
+    def test_create_can_opt_into_deployment_environment(self, client) -> None:
+        api = client.return_value
+        api.request.return_value = {"id": "session-id", "status": "syncing"}
+
+        create_deployer_dev_session(
+            "deployment-id",
+            "compose.dev.yaml",
+            "runner-device-id",
+            include_deployment_environment=True,
+        )
+
+        api.request.assert_called_once_with(
+            "POST",
+            "/mcp/dev-sessions",
+            json={
+                "deployment_id": "deployment-id",
+                "compose_file": "compose.dev.yaml",
+                "runtime_device_id": "runner-device-id",
+                "include_deployment_environment": True,
+            },
+        )
+
+    @patch("deployer_mcp.server._client")
     def test_list_session_runners_uses_owner_scoped_endpoint(self, client) -> None:
         api = client.return_value
         api.request.return_value = [{"id": "runner-device-id", "name": "deployer-host"}]

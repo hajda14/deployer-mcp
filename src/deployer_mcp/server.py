@@ -482,13 +482,18 @@ def create_deployer_dev_session(
     deployment_id: str,
     compose_file: str,
     runtime_device_id: str | None = None,
+    include_deployment_environment: bool = False,
 ) -> dict[str, Any]:
     """Create an owner-scoped development session for an existing deployment.
 
     `compose_file` must be a relative POSIX path inside the local project, such
     as `compose.dev.yaml`. An optional `runtime_device_id` selects an authorized
-    SSH runner; otherwise the deployment's device is used. The returned session DTO contains no attach or sync
-    token. After creation, start local file streaming with
+    SSH runner; otherwise the deployment's device is used. Set
+    `include_deployment_environment` only when the temporary runtime needs the
+    deployment's current environment values for Compose interpolation. Deployer
+    snapshots them encrypted and writes a mode-0600 remote `.env` file that is
+    removed with the session workspace. The returned session DTO contains no
+    attach or sync token. After creation, start local file streaming with
     `deployer dev attach <session-id> --path <project-dir> --compose-file
     <relative-compose-file>`. This MCP operation manages the session only; it
     cannot manage devices, pools, credentials, or other infrastructure.
@@ -504,6 +509,11 @@ def create_deployer_dev_session(
             "deployment_id": deployment_id,
             "compose_file": compose_file,
             **({"runtime_device_id": runtime_device_id} if runtime_device_id else {}),
+            **(
+                {"include_deployment_environment": True}
+                if include_deployment_environment
+                else {}
+            ),
         },
     )
     return _public_dev_session(response)

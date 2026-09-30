@@ -96,6 +96,10 @@ existing deployment. Use `list_deployer_dev_session_runners` to see authorized
 SSH devices that can host the session, then pass the selected ID as the optional
 `runtime_device_id` to `create_deployer_dev_session`. Omitting it uses the
 deployment device. The tool returns the session DTO without an attach token.
+Set `include_deployment_environment=true` only when the temporary runtime needs
+the deployment's current values for Compose interpolation. Deployer snapshots
+them encrypted and writes a mode-0600 remote `.env` file that is removed with
+the session workspace; secret values are never returned by MCP.
 Then run the local Rust CLI to stream the working tree into that session:
 
 ```bash
