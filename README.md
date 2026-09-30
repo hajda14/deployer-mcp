@@ -91,6 +91,25 @@ rollback. Responses show only the name and whether a value is set for secrets.
 `WORLD_RUNTIME_SHARED_SECRET` must be marked secret and contain at least 32
 ASCII characters.
 
+Development sessions are temporary, owner-scoped environments attached to an
+existing deployment. Use `list_deployer_dev_session_runners` to see authorized
+SSH devices that can host the session, then pass the selected ID as the optional
+`runtime_device_id` to `create_deployer_dev_session`. Omitting it uses the
+deployment device. The tool returns the session DTO without an attach token.
+Then run the local Rust CLI to stream the working tree into that session:
+
+```bash
+deployer dev attach <session-id> --path <project-dir> \
+  --compose-file <relative-compose-file>
+```
+
+Use `list_deployer_dev_sessions`, `get_deployer_dev_session`,
+`get_deployer_dev_session_logs`, and `stop_deployer_dev_session` to inspect and
+manage sessions. Sessions are scoped to deployments owned by the MCP token's
+user. These tools do not manage devices, pools, credentials, or infrastructure.
+The MCP process does not stream local files itself; the Rust CLI connects to
+Deployer and sends the local changes.
+
 Git deployments may set `git_provider` to `github`, `gitlab`,
 `azure_devops`, or `generic`; common hosted repository URLs are inferred when
 it is omitted. GitHub uses the user's OAuth connection. GitLab, Azure DevOps,
@@ -133,7 +152,7 @@ storage; do not place passwords or API tokens in them.
 ```bash
 python3 -m venv "$HOME/.local/share/deployer-mcp"
 "$HOME/.local/share/deployer-mcp/bin/python" -m pip install \
-  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.0"
+  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.1"
 ```
 
 Create an `MCP only` or `REST API + MCP` token in Deployer’s Profile Settings,

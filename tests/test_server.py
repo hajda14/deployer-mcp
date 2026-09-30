@@ -10,12 +10,19 @@ from mcp.client.stdio import stdio_client
 
 from deployer_mcp.server import (
     _deployment_payload,
+    _safe_relative_compose_file,
     cancel_deployer_build_job,
+    create_deployer_dev_session,
     get_deployer_build_job,
+    get_deployer_dev_session,
+    get_deployer_dev_session_logs,
+    list_deployer_dev_session_runners,
     list_deployer_build_jobs,
+    list_deployer_dev_sessions,
     list_deployer_releases,
     mcp,
     rollback_deployer_release,
+    stop_deployer_dev_session,
     upsert_environment_variable,
 )
 
@@ -33,6 +40,12 @@ class ProtocolV2Tests(IsolatedAsyncioTestCase):
         self.assertIn("plan_deployer_project", tool_names)
         self.assertIn("deploy_deployer_project", tool_names)
         self.assertIn("upsert_environment_variable", tool_names)
+        self.assertIn("create_deployer_dev_session", tool_names)
+        self.assertIn("list_deployer_dev_session_runners", tool_names)
+        self.assertIn("list_deployer_dev_sessions", tool_names)
+        self.assertIn("get_deployer_dev_session", tool_names)
+        self.assertIn("get_deployer_dev_session_logs", tool_names)
+        self.assertIn("stop_deployer_dev_session", tool_names)
 
     async def test_server_still_negotiates_legacy_protocol(self) -> None:
         async with Client(mcp, mode="legacy") as client:
@@ -113,6 +126,138 @@ class DeploymentPayloadTests(TestCase):
                 "is_secret": True,
             },
         )
+
+
+class DevelopmentSessionTests(TestCase):
+    def test_compose_path_must_be_relative_and_confined(self) -> None:
+        self.assertEqual(
+            _safe_relative_compose_file("configs/compose.dev.yaml"),
+            "configs/compose.dev.yaml",
+        )
+        for path in (
+            "../compose.yaml",
+            "configs/../../compose.yaml",
+            "/tmp/compose.yaml",
+            "C:/project/compose.yaml",
+            "configs\\compose.yaml",
+            "",
+            "configs//compose.yaml",
+            "compose\x00.yaml",
+        ):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                _safe_relative_compose_file(path)
+
+    @patch("deployer_mcp.server._client")
+    def test_create_calls_owner_scoped_endpoint_and_strips_tokens(self, client) -> None:
+        api = client.return_value
+        api.request.return_value = {
+            "id": "session-id",
+            "status": "created",
+            "token": "must-not-leak",
+            "metadata": {"sync_token": "also-must-not-leak"},
+        }
+
+        result = create_deployer_dev_session(
+            "deployment-id",
+            "compose.dev.yaml",
+        )
+
+        self.assertEqual(result, {"id": "session-id", "status": "created", "metadata": {}})
+        api.request.assert_called_once_with(
+            "POST",
+            "/mcp/dev-sessions",
+            json={
+                "deployment_id": "deployment-id",
+                "compose_file": "compose.dev.yaml",
+            },
+        )
+
+    @patch("deployer_mcp.server._client")
+    def test_create_selects_authorized_runner(self, client) -> None:
+        api = client.return_value
+        api.request.return_value = {"id": "session-id", "status": "syncing"}
+
+        create_deployer_dev_session(
+            "deployment-id",
+            "compose.dev.yaml",
+            "runner-device-id",
+        )
+
+        api.request.assert_called_once_with(
+            "POST",
+            "/mcp/dev-sessions",
+            json={
+                "deployment_id": "deployment-id",
+                "compose_file": "compose.dev.yaml",
+                "runtime_device_id": "runner-device-id",
+            },
+        )
+
+    @patch("deployer_mcp.server._client")
+    def test_list_session_runners_uses_owner_scoped_endpoint(self, client) -> None:
+        api = client.return_value
+        api.request.return_value = [{"id": "runner-device-id", "name": "deployer-host"}]
+
+        result = list_deployer_dev_session_runners("deployment-id")
+
+        self.assertEqual(result, [{"id": "runner-device-id", "name": "deployer-host"}])
+        api.request.assert_called_once_with(
+            "GET",
+            "/mcp/dev-sessions/runners?deployment_id=deployment-id",
+        )
+
+    @patch("deployer_mcp.server._client")
+    def test_session_tools_use_owner_scoped_endpoints(self, client) -> None:
+        api = client.return_value
+        api.request.side_effect = [
+            [{"id": "session-id"}],
+            [{"id": "session-id", "status": "ready"}],
+            {"id": "session-id", "status": "ready"},
+            {"logs": "server started"},
+            {"id": "session-id", "status": "stopped"},
+        ]
+
+        self.assertEqual(list_deployer_dev_sessions(), [{"id": "session-id"}])
+        self.assertEqual(
+            list_deployer_dev_sessions("deployment-id"),
+            [{"id": "session-id", "status": "ready"}],
+        )
+        self.assertEqual(
+            get_deployer_dev_session("session-id"),
+            {"id": "session-id", "status": "ready"},
+        )
+        self.assertEqual(
+            get_deployer_dev_session_logs("session-id"),
+            {"logs": "server started"},
+        )
+        self.assertEqual(
+            stop_deployer_dev_session("session-id"),
+            {"id": "session-id", "status": "stopped"},
+        )
+
+    @patch("deployer_mcp.server._client")
+    def test_filtered_list_and_session_actions_use_expected_paths(self, client) -> None:
+        api = client.return_value
+        api.request.return_value = []
+        list_deployer_dev_sessions("deployment-id")
+        self.assertEqual(
+            api.request.call_args.args,
+            ("GET", "/mcp/dev-sessions?deployment_id=deployment-id"),
+        )
+
+        for action, expected in (
+            (get_deployer_dev_session, ("GET", "/mcp/dev-sessions/session-id")),
+            (get_deployer_dev_session_logs, ("GET", "/mcp/dev-sessions/session-id/logs")),
+            (stop_deployer_dev_session, ("POST", "/mcp/dev-sessions/session-id/stop")),
+        ):
+            action("session-id")
+            self.assertEqual(api.request.call_args.args, expected)
+
+    def test_session_ids_reject_path_injection(self) -> None:
+        with patch("deployer_mcp.server._client") as client:
+            with self.assertRaises(ValueError):
+                get_deployer_dev_session("../other-session")
+            client.return_value.request.assert_not_called()
 
     @patch("deployer_mcp.server._client")
     def test_build_history_tools_use_owner_scoped_mcp_endpoints(self, client) -> None:

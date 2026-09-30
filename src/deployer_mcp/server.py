@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal
 
 import yaml
@@ -11,12 +12,14 @@ from deployer_mcp.client import DeployerClient
 
 mcp = MCPServer(
     "deployer",
-    version="0.2.0",
+    version="0.2.1",
     instructions=(
         "Create and validate .deployer.yml files, then plan, deploy, inspect, "
         "and redeploy projects. This server cannot manage profiles, tokens, "
         "credentials, identities, devices, pools, DNS infrastructure, arbitrary "
-        "DNS records, or global settings. Deployment tools may automatically "
+        "DNS records, or global settings. Development sessions are scoped to "
+        "deployments owned by the token's user. Deployment tools may "
+        "automatically "
         "manage only the A/AAAA records owned by their gateway routes."
     ),
 )
@@ -38,6 +41,51 @@ def _safe_project_file(root: Path, relative_path: str) -> Path:
     if not candidate.is_relative_to(root):
         raise ValueError("Project file must stay within the project directory")
     return candidate
+
+
+def _safe_relative_compose_file(compose_file: str) -> str:
+    """Validate a portable relative Compose path before sending it to the API."""
+    if not compose_file or "\x00" in compose_file or "\\" in compose_file:
+        raise ValueError("compose_file must be a non-empty relative POSIX path")
+    posix_path = PurePosixPath(compose_file)
+    windows_path = PureWindowsPath(compose_file)
+    if (
+        posix_path.is_absolute()
+        or windows_path.is_absolute()
+        or windows_path.drive
+        or any(part in {"", ".", ".."} for part in compose_file.split("/"))
+    ):
+        raise ValueError("compose_file must stay within the project directory")
+    return posix_path.as_posix()
+
+
+def _safe_resource_id(resource_id: str, label: str) -> str:
+    """Restrict API path identifiers to opaque single path segments."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", resource_id):
+        raise ValueError(f"{label} must be a valid identifier")
+    return resource_id
+
+
+_DEV_SESSION_TOKEN_FIELDS = {
+    "token",
+    "session_token",
+    "sync_token",
+    "attach_token",
+    "capability_token",
+}
+
+
+def _public_dev_session(value: Any) -> Any:
+    """Defensively strip session credentials from every returned DTO level."""
+    if isinstance(value, dict):
+        return {
+            key: _public_dev_session(item)
+            for key, item in value.items()
+            if str(key).lower() not in _DEV_SESSION_TOKEN_FIELDS
+        }
+    if isinstance(value, list):
+        return [_public_dev_session(item) for item in value]
+    return value
 
 
 def _read_project(project_path: str) -> tuple[Path, str, str | None]:
@@ -426,6 +474,98 @@ def upsert_environment_variable(
         "PUT",
         f"/mcp/deployments/{deployment_id}/environment-variables",
         json={"name": name, "value": value, "is_secret": is_secret},
+    )
+
+
+@mcp.tool()
+def create_deployer_dev_session(
+    deployment_id: str,
+    compose_file: str,
+    runtime_device_id: str | None = None,
+) -> dict[str, Any]:
+    """Create an owner-scoped development session for an existing deployment.
+
+    `compose_file` must be a relative POSIX path inside the local project, such
+    as `compose.dev.yaml`. An optional `runtime_device_id` selects an authorized
+    SSH runner; otherwise the deployment's device is used. The returned session DTO contains no attach or sync
+    token. After creation, start local file streaming with
+    `deployer dev attach <session-id> --path <project-dir> --compose-file
+    <relative-compose-file>`. This MCP operation manages the session only; it
+    cannot manage devices, pools, credentials, or other infrastructure.
+    """
+    deployment_id = _safe_resource_id(deployment_id, "deployment_id")
+    compose_file = _safe_relative_compose_file(compose_file)
+    if runtime_device_id is not None:
+        runtime_device_id = _safe_resource_id(runtime_device_id, "runtime_device_id")
+    response = _client().request(
+        "POST",
+        "/mcp/dev-sessions",
+        json={
+            "deployment_id": deployment_id,
+            "compose_file": compose_file,
+            **({"runtime_device_id": runtime_device_id} if runtime_device_id else {}),
+        },
+    )
+    return _public_dev_session(response)
+
+
+@mcp.tool()
+def list_deployer_dev_session_runners(deployment_id: str) -> list[dict[str, Any]]:
+    """List authorized SSH devices that can run a development session.
+
+    Use the returned device ID as `runtime_device_id` when creating a session.
+    The deployment device remains the default when no runner is selected.
+    """
+    deployment_id = _safe_resource_id(deployment_id, "deployment_id")
+    return _public_dev_session(
+        _client().request(
+            "GET",
+            f"/mcp/dev-sessions/runners?deployment_id={deployment_id}",
+        )
+    )
+
+
+@mcp.tool()
+def list_deployer_dev_sessions(deployment_id: str | None = None) -> list[dict[str, Any]]:
+    """List development sessions owned by the MCP token's user.
+
+    Optionally filter by an owned `deployment_id`. Use
+    `create_deployer_dev_session` to create one, then run
+    `deployer dev attach <session-id> --path <project-dir> --compose-file
+    <relative-compose-file>` locally to stream project changes.
+    """
+    if deployment_id is None:
+        path = "/mcp/dev-sessions"
+    else:
+        deployment_id = _safe_resource_id(deployment_id, "deployment_id")
+        path = f"/mcp/dev-sessions?deployment_id={deployment_id}"
+    return _public_dev_session(_client().request("GET", path))
+
+
+@mcp.tool()
+def get_deployer_dev_session(session_id: str) -> dict[str, Any]:
+    """Read status and preview details for a development session you own."""
+    session_id = _safe_resource_id(session_id, "session_id")
+    return _public_dev_session(
+        _client().request("GET", f"/mcp/dev-sessions/{session_id}")
+    )
+
+
+@mcp.tool()
+def get_deployer_dev_session_logs(session_id: str) -> dict[str, Any]:
+    """Read bounded runtime logs for a development session you own."""
+    session_id = _safe_resource_id(session_id, "session_id")
+    return _public_dev_session(
+        _client().request("GET", f"/mcp/dev-sessions/{session_id}/logs")
+    )
+
+
+@mcp.tool()
+def stop_deployer_dev_session(session_id: str) -> dict[str, Any]:
+    """Stop and clean up one development session owned by the MCP user."""
+    session_id = _safe_resource_id(session_id, "session_id")
+    return _public_dev_session(
+        _client().request("POST", f"/mcp/dev-sessions/{session_id}/stop")
     )
 
 
