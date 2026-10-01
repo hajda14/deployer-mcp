@@ -12,7 +12,7 @@ from deployer_mcp.client import DeployerClient
 
 mcp = MCPServer(
     "deployer",
-    version="0.2.4",
+    version="0.2.5",
     instructions=(
         "Create and validate .deployer.yml files, then plan, deploy, inspect, "
         "and redeploy projects, and enable owner-scoped Private Preview on an "
@@ -483,16 +483,17 @@ def enable_deployer_private_preview(
     deployment_id: str,
     development_session_id: str | None = None,
 ) -> dict[str, Any]:
-    """Enable Private Preview for an owned deployment using its current access mode.
+    """Enable deployment-wide Private Preview or publish one isolated dev session.
 
     Requires an administrator MCP token and an owned deployment with a route
     that uses HTTPS or redirects HTTP to HTTPS. This preserves any existing
     review-password policy and never returns a password, preview cookie, or
-    owner credential. It gates every listed deployment domain, including the
-    production URL, so inspect `protected_domains` before enabling it. Gateway
-    configuration is synchronized before success. Pass an existing running
-    `development_session_id` to publish that session at a session-specific HTTPS
-    preview URL without rebuilding or restarting its Compose project.
+    owner credential. Without a session ID it gates every listed deployment
+    domain, including the production URL, so inspect `protected_domains`.
+    Passing an existing running `development_session_id` publishes only that
+    session at its HTTPS preview path; it does not enable deployment-wide
+    access or change production route access. It does not rebuild or restart
+    the session.
     """
     deployment_id = _safe_resource_id(deployment_id, "deployment_id")
     payload: dict[str, str] = {}
@@ -598,6 +599,20 @@ def get_deployer_dev_session_logs(session_id: str) -> dict[str, Any]:
     session_id = _safe_resource_id(session_id, "session_id")
     return _public_dev_session(
         _client().request("GET", f"/mcp/dev-sessions/{session_id}/logs")
+    )
+
+
+@mcp.tool()
+def get_deployer_dev_session_metrics(session_id: str) -> dict[str, Any]:
+    """Read live resource counters for containers in one running session you own.
+
+    Returns container state, CPU, memory, network and block I/O, and process
+    counts for the exact session Compose project. It does not return container
+    environment values, inspect production containers, or execute commands.
+    """
+    session_id = _safe_resource_id(session_id, "session_id")
+    return _public_dev_session(
+        _client().request("GET", f"/mcp/dev-sessions/{session_id}/metrics")
     )
 
 

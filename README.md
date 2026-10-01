@@ -100,10 +100,11 @@ enabled state, configured-password status, owner ID, and protected domains.
 Private Preview gates every listed deployment domain, including its ordinary
 production URL. Review the returned `protected_domains` before enabling it. The
 operation does not create domains or change route/TLS settings.
-Pass `development_session_id` to also publish an existing running session at a
+Pass `development_session_id` to publish only an existing running session at a
 session-specific HTTPS path and receive its preview URL without rebuilding or
-restarting the session. The response includes the session DTO without any
-attach or sync token.
+restarting it. This session-scoped operation does not enable deployment-wide
+Private Preview or alter the production route's access. The response includes
+the session DTO without any attach or sync token.
 
 Development sessions are temporary, owner-scoped environments attached to an
 existing deployment. Use `list_deployer_dev_session_runners` to see authorized
@@ -114,6 +115,10 @@ Set `include_deployment_environment=true` only when the temporary runtime needs
 the deployment's current values for Compose interpolation. Deployer snapshots
 them encrypted and writes a mode-0600 remote `.env` file that is removed with
 the session workspace; secret values are never returned by MCP.
+The same file always includes `DEPLOYER_DEV_PREVIEW_PATH`, set to the exact
+session preview prefix (or `/` when there is no eligible HTTPS route). Map it
+to a dev-server variable in Compose, for example
+`VITE_BASE_PATH: ${DEPLOYER_DEV_PREVIEW_PATH:-/}`.
 Then run the local Rust CLI to stream the working tree into that session:
 
 ```bash
@@ -122,9 +127,14 @@ deployer dev attach <session-id> --path <project-dir> \
 ```
 
 Use `list_deployer_dev_sessions`, `get_deployer_dev_session`,
-`get_deployer_dev_session_logs`, and `stop_deployer_dev_session` to inspect and
-manage sessions. Sessions are scoped to deployments owned by the MCP token's
-user. These tools do not manage devices, pools, credentials, or infrastructure.
+`get_deployer_dev_session_logs`, `get_deployer_dev_session_metrics`, and
+`stop_deployer_dev_session` to inspect and manage sessions.
+`get_deployer_dev_session_metrics` returns live state, CPU, memory, network and
+block I/O, and process counts only for containers carrying the exact session's
+Compose project label. It cannot execute commands, expose container environment
+values, or inspect production containers. Sessions are scoped to deployments
+owned by the MCP token's user. These tools do not manage devices, pools,
+credentials, or infrastructure.
 The MCP process does not stream local files itself; the Rust CLI connects to
 Deployer and sends the local changes.
 
