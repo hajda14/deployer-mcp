@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal
+from urllib.parse import urlencode
 
 import yaml
 from mcp.server import MCPServer
@@ -12,7 +13,7 @@ from deployer_mcp.client import DeployerClient
 
 mcp = MCPServer(
     "deployer",
-    version="0.2.5",
+    version="0.2.6",
     instructions=(
         "Create and validate .deployer.yml files, then plan, deploy, inspect, "
         "and redeploy projects, and enable owner-scoped Private Preview on an "
@@ -594,11 +595,35 @@ def get_deployer_dev_session(session_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_deployer_dev_session_logs(session_id: str) -> dict[str, Any]:
-    """Read bounded runtime logs for a development session you own."""
+def get_deployer_dev_session_logs(
+    session_id: str,
+    service: str | None = None,
+    tail_lines: int = 200,
+    since_seconds: int | None = None,
+) -> dict[str, Any]:
+    """Read bounded logs for one owned session, optionally filtered by service/time.
+
+    `service` selects one Compose service such as `backend` or `nginx`.
+    `tail_lines` is capped at 500 and `since_seconds` at 86400. Query strings
+    in log content are redacted by Deployer.
+    """
     session_id = _safe_resource_id(session_id, "session_id")
+    if not 1 <= tail_lines <= 500:
+        raise ValueError("tail_lines must be between 1 and 500")
+    if since_seconds is not None and not 1 <= since_seconds <= 86_400:
+        raise ValueError("since_seconds must be between 1 and 86400")
+    query: dict[str, str | int] = {"tail_lines": tail_lines}
+    if service is not None:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}", service):
+            raise ValueError("service must be a valid Compose service name")
+        query["service"] = service
+    if since_seconds is not None:
+        query["since_seconds"] = since_seconds
     return _public_dev_session(
-        _client().request("GET", f"/mcp/dev-sessions/{session_id}/logs")
+        _client().request(
+            "GET",
+            f"/mcp/dev-sessions/{session_id}/logs?{urlencode(query)}",
+        )
     )
 
 
@@ -613,6 +638,27 @@ def get_deployer_dev_session_metrics(session_id: str) -> dict[str, Any]:
     session_id = _safe_resource_id(session_id, "session_id")
     return _public_dev_session(
         _client().request("GET", f"/mcp/dev-sessions/{session_id}/metrics")
+    )
+
+
+@mcp.tool()
+def apply_deployer_dev_session_fixture(
+    session_id: str,
+    fixture_id: Literal["dense-hostile-npcs-v1"],
+) -> dict[str, Any]:
+    """Apply the allowlisted dense hostile NPC fixture to one owned dev session.
+
+    The Deployer API verifies session ownership and invokes only the fixed
+    `deployer-dev-fixture` Compose service in that session's project. The
+    fixture runner must confirm its database is the project-local `db` service.
+    """
+    session_id = _safe_resource_id(session_id, "session_id")
+    return _public_dev_session(
+        _client().request(
+            "POST",
+            f"/mcp/dev-sessions/{session_id}/fixtures",
+            json={"fixture_id": fixture_id},
+        )
     )
 
 

@@ -135,6 +135,14 @@ Compose project label. It cannot execute commands, expose container environment
 values, or inspect production containers. Sessions are scoped to deployments
 owned by the MCP token's user. These tools do not manage devices, pools,
 credentials, or infrastructure.
+The logs tool accepts optional `service`, `tail_lines` (1–500), and
+`since_seconds` (1–86400) arguments to limit a running session's output.
+`apply_deployer_dev_session_fixture` accepts only `dense-hostile-npcs-v1`. The
+target Compose file must define a non-published `deployer-dev-fixture` one-shot
+service and a running project-local `db` service. The runner independently
+checks that its `DATABASE_URL` points to `db`, applies the fixture idempotently,
+and prints the documented session-local result contract. Deployer never accepts
+SQL or a caller-supplied command.
 The MCP process does not stream local files itself; the Rust CLI connects to
 Deployer and sends the local changes.
 

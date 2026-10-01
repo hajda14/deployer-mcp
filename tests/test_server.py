@@ -14,9 +14,11 @@ from deployer_mcp.server import (
     cancel_deployer_build_job,
     create_deployer_dev_session,
     enable_deployer_private_preview,
+    apply_deployer_dev_session_fixture,
     get_deployer_build_job,
     get_deployer_dev_session,
     get_deployer_dev_session_logs,
+    get_deployer_dev_session_metrics,
     list_deployer_dev_session_runners,
     list_deployer_build_jobs,
     list_deployer_dev_sessions,
@@ -47,6 +49,8 @@ class ProtocolV2Tests(IsolatedAsyncioTestCase):
         self.assertIn("list_deployer_dev_sessions", tool_names)
         self.assertIn("get_deployer_dev_session", tool_names)
         self.assertIn("get_deployer_dev_session_logs", tool_names)
+        self.assertIn("get_deployer_dev_session_metrics", tool_names)
+        self.assertIn("apply_deployer_dev_session_fixture", tool_names)
         self.assertIn("stop_deployer_dev_session", tool_names)
 
     async def test_server_still_negotiates_legacy_protocol(self) -> None:
@@ -201,6 +205,64 @@ class DevelopmentSessionTests(TestCase):
                 _safe_relative_compose_file(path)
 
     @patch("deployer_mcp.server._client")
+    def test_metrics_tool_uses_owner_scoped_session_endpoint(self, client) -> None:
+        client.return_value.request.return_value = {
+            "session_id": "session-id",
+            "containers": [],
+        }
+
+        result = get_deployer_dev_session_metrics("session-id")
+
+        self.assertEqual(result["session_id"], "session-id")
+        client.return_value.request.assert_called_once_with(
+            "GET", "/mcp/dev-sessions/session-id/metrics"
+        )
+
+    @patch("deployer_mcp.server._client")
+    def test_fixture_tool_uses_owner_scoped_session_endpoint(self, client) -> None:
+        api = client.return_value
+        api.request.return_value = {
+            "fixture_id": "dense-hostile-npcs-v1",
+            "status": "applied",
+            "database_scope": "session-local",
+            "world_id": "world-1",
+            "npc_count": 2008,
+            "hostile_npc_count": 2008,
+        }
+
+        result = apply_deployer_dev_session_fixture(
+            "session-id", "dense-hostile-npcs-v1"
+        )
+
+        self.assertEqual(result["hostile_npc_count"], 2008)
+        api.request.assert_called_once_with(
+            "POST",
+            "/mcp/dev-sessions/session-id/fixtures",
+            json={"fixture_id": "dense-hostile-npcs-v1"},
+        )
+
+    @patch("deployer_mcp.server._client")
+    def test_logs_tool_can_filter_service_and_time_window(self, client) -> None:
+        client.return_value.request.return_value = {"logs": "recent backend output"}
+
+        result = get_deployer_dev_session_logs(
+            "session-id",
+            service="backend",
+            tail_lines=80,
+            since_seconds=600,
+        )
+
+        self.assertEqual(result["logs"], "recent backend output")
+        client.return_value.request.assert_called_once_with(
+            "GET",
+            "/mcp/dev-sessions/session-id/logs?tail_lines=80&service=backend&since_seconds=600",
+        )
+
+    def test_logs_tool_rejects_arbitrary_service_input(self) -> None:
+        with self.assertRaises(ValueError):
+            get_deployer_dev_session_logs("session-id", service="backend;touch /tmp/x")
+
+    @patch("deployer_mcp.server._client")
     def test_create_calls_owner_scoped_endpoint_and_strips_tokens(self, client) -> None:
         api = client.return_value
         api.request.return_value = {
@@ -323,7 +385,10 @@ class DevelopmentSessionTests(TestCase):
 
         for action, expected in (
             (get_deployer_dev_session, ("GET", "/mcp/dev-sessions/session-id")),
-            (get_deployer_dev_session_logs, ("GET", "/mcp/dev-sessions/session-id/logs")),
+            (
+                get_deployer_dev_session_logs,
+                ("GET", "/mcp/dev-sessions/session-id/logs?tail_lines=200"),
+            ),
             (stop_deployer_dev_session, ("POST", "/mcp/dev-sessions/session-id/stop")),
         ):
             action("session-id")
