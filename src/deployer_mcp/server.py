@@ -13,10 +13,11 @@ from deployer_mcp.client import DeployerClient
 
 mcp = MCPServer(
     "deployer",
-    version="0.2.6",
+    version="0.2.8",
     instructions=(
         "Create and validate .deployer.yml files, then plan, deploy, inspect, "
-        "and redeploy projects, and enable owner-scoped Private Preview on an "
+        "and redeploy projects, enable owner-scoped Private Preview, and manage "
+        "signed GitHub push webhooks for owned deployments. "
         "existing HTTPS deployment route. This server cannot manage profiles, tokens, "
         "credentials, identities, devices, pools, DNS infrastructure, arbitrary "
         "DNS records, or global settings. Development sessions are scoped to "
@@ -381,6 +382,42 @@ def get_deployer_deployment_status(deployment_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def get_deployer_github_webhook(deployment_id: str) -> dict[str, Any]:
+    """Read the signed GitHub push webhook URL and enabled state for an owned deployment.
+
+    The signing secret is never returned by this read operation.
+    """
+    return _client().request(
+        "GET",
+        f"/mcp/deployments/{deployment_id}/github-webhook",
+    )
+
+
+@mcp.tool()
+def configure_deployer_github_webhook(deployment_id: str) -> dict[str, Any]:
+    """Create or rotate a signed GitHub push webhook for an owned GitHub deployment.
+
+    Deployer registers the Push webhook through the connected GitHub account.
+    The response includes the URL and signing secret once; verify the active
+    hook and recent delivery in the repository's GitHub webhook settings. Run
+    the get operation later to read the URL; it never returns the secret again.
+    """
+    return _client().request(
+        "POST",
+        f"/mcp/deployments/{deployment_id}/github-webhook",
+    )
+
+
+@mcp.tool()
+def disable_deployer_github_webhook(deployment_id: str) -> dict[str, Any]:
+    """Disable the signed GitHub push webhook for an owned deployment."""
+    return _client().request(
+        "DELETE",
+        f"/mcp/deployments/{deployment_id}/github-webhook",
+    )
+
+
+@mcp.tool()
 def list_deployer_build_jobs(deployment_id: str) -> list[dict[str, Any]]:
     """List the latest persisted build attempts for an owned deployment."""
     return _client().request(
@@ -623,6 +660,34 @@ def get_deployer_dev_session_logs(
         _client().request(
             "GET",
             f"/mcp/dev-sessions/{session_id}/logs?{urlencode(query)}",
+        )
+    )
+
+
+@mcp.tool()
+def get_deployer_dev_session_timings(
+    session_id: str,
+    tail_lines: int = 200,
+    since_seconds: int = 3600,
+) -> dict[str, Any]:
+    """Read bounded WebSocket timing samples for one development preview you own.
+
+    Samples correlate the public gateway and device ingress with an opaque
+    request ID. Only status and upstream connect/header durations are returned;
+    no request URI, query, cookies, headers, or bodies are included. Successful
+    WebSocket upgrade samples appear after the socket closes. Both limits are
+    bounded by Deployer.
+    """
+    session_id = _safe_resource_id(session_id, "session_id")
+    if not 1 <= tail_lines <= 500:
+        raise ValueError("tail_lines must be between 1 and 500")
+    if not 1 <= since_seconds <= 86_400:
+        raise ValueError("since_seconds must be between 1 and 86400")
+    query = urlencode({"tail_lines": tail_lines, "since_seconds": since_seconds})
+    return _public_dev_session(
+        _client().request(
+            "GET",
+            f"/mcp/dev-sessions/{session_id}/timings?{query}",
         )
     )
 

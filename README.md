@@ -91,6 +91,19 @@ rollback. Responses show only the name and whether a value is set for secrets.
 `WORLD_RUNTIME_SHARED_SECRET` must be marked secret and contain at least 32
 ASCII characters.
 
+For GitHub deployments, `configure_deployer_github_webhook` creates or rotates
+a signed Push webhook through the connected GitHub account and returns its URL
+and signing secret once. The integration needs repository webhook write access
+and admin access to the repository. Confirm the hook and its deliveries in
+**Settings → Webhooks**. The secret is encrypted at rest; the read tool returns
+only the URL and enabled state. `disable_deployer_github_webhook`
+invalidates the callback URL. Deliveries are signature-checked, restricted to
+the deployment's repository and branch, deduplicated, and queued before the
+worker redeploys. Periodic auto-redeploy can remain enabled as a fallback or be
+disabled independently in deployment settings. If GitHub access is later
+revoked, Deployer disables its callback immediately and reports if it could not
+remove the now-inert hook from GitHub.
+
 Use `enable_deployer_private_preview` to enable the existing deployment's
 Private Preview policy through an MCP-only token. The token must belong to an
 administrator and the deployment. At least one clearnet route must use HTTPS
@@ -127,8 +140,9 @@ deployer dev attach <session-id> --path <project-dir> \
 ```
 
 Use `list_deployer_dev_sessions`, `get_deployer_dev_session`,
-`get_deployer_dev_session_logs`, `get_deployer_dev_session_metrics`, and
-`stop_deployer_dev_session` to inspect and manage sessions.
+`get_deployer_dev_session_logs`, `get_deployer_dev_session_metrics`,
+`get_deployer_dev_session_timings`, and `stop_deployer_dev_session` to inspect
+and manage sessions.
 `get_deployer_dev_session_metrics` returns live state, CPU, memory, network and
 block I/O, and process counts only for containers carrying the exact session's
 Compose project label. It cannot execute commands, expose container environment
@@ -137,6 +151,12 @@ owned by the MCP token's user. These tools do not manage devices, pools,
 credentials, or infrastructure.
 The logs tool accepts optional `service`, `tail_lines` (1–500), and
 `since_seconds` (1–86400) arguments to limit a running session's output.
+The timing tool accepts `tail_lines` (1–500) and `since_seconds` (1–86400) and
+returns correlated WebSocket status and upstream connect/header times from the
+public gateway and selected device ingress. It exposes no request path, query,
+headers, cookies, or body. Nginx writes these records when the socket closes,
+so successful upgrades appear after the load run; a missing layer record means
+that layer's log was unavailable or outside the requested window.
 `apply_deployer_dev_session_fixture` accepts only `dense-hostile-npcs-v1`. The
 target Compose file must define a non-published `deployer-dev-fixture` one-shot
 service and a running project-local `db` service. The runner independently
@@ -188,7 +208,7 @@ storage; do not place passwords or API tokens in them.
 ```bash
 python3 -m venv "$HOME/.local/share/deployer-mcp"
 "$HOME/.local/share/deployer-mcp/bin/python" -m pip install \
-  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.4"
+  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.8"
 ```
 
 Create an `MCP only` or `REST API + MCP` token in Deployer’s Profile Settings,

@@ -12,13 +12,17 @@ from deployer_mcp.server import (
     _deployment_payload,
     _safe_relative_compose_file,
     cancel_deployer_build_job,
+    configure_deployer_github_webhook,
     create_deployer_dev_session,
+    disable_deployer_github_webhook,
     enable_deployer_private_preview,
     apply_deployer_dev_session_fixture,
     get_deployer_build_job,
+    get_deployer_github_webhook,
     get_deployer_dev_session,
     get_deployer_dev_session_logs,
     get_deployer_dev_session_metrics,
+    get_deployer_dev_session_timings,
     list_deployer_dev_session_runners,
     list_deployer_build_jobs,
     list_deployer_dev_sessions,
@@ -43,6 +47,9 @@ class ProtocolV2Tests(IsolatedAsyncioTestCase):
         self.assertIn("plan_deployer_project", tool_names)
         self.assertIn("deploy_deployer_project", tool_names)
         self.assertIn("upsert_environment_variable", tool_names)
+        self.assertIn("configure_deployer_github_webhook", tool_names)
+        self.assertIn("get_deployer_github_webhook", tool_names)
+        self.assertIn("disable_deployer_github_webhook", tool_names)
         self.assertIn("enable_deployer_private_preview", tool_names)
         self.assertIn("create_deployer_dev_session", tool_names)
         self.assertIn("list_deployer_dev_session_runners", tool_names)
@@ -50,6 +57,7 @@ class ProtocolV2Tests(IsolatedAsyncioTestCase):
         self.assertIn("get_deployer_dev_session", tool_names)
         self.assertIn("get_deployer_dev_session_logs", tool_names)
         self.assertIn("get_deployer_dev_session_metrics", tool_names)
+        self.assertIn("get_deployer_dev_session_timings", tool_names)
         self.assertIn("apply_deployer_dev_session_fixture", tool_names)
         self.assertIn("stop_deployer_dev_session", tool_names)
 
@@ -107,6 +115,34 @@ class DeploymentPayloadTests(TestCase):
 
         self.assertEqual(_payload(None, [route])["routes"], [route])
 
+
+class GithubWebhookTests(TestCase):
+    @patch("deployer_mcp.server._client")
+    def test_github_webhook_tools_use_owner_scoped_endpoints(self, client) -> None:
+        api = client.return_value
+        api.request.side_effect = [
+            {"enabled": True, "github_registered": True},
+            {"enabled": True, "secret": "shown-once"},
+            {"disabled": True, "remote_hook_removed": True},
+        ]
+
+        self.assertTrue(get_deployer_github_webhook("deployment-id")["enabled"])
+        self.assertEqual(
+            configure_deployer_github_webhook("deployment-id")["secret"],
+            "shown-once",
+        )
+        self.assertTrue(disable_deployer_github_webhook("deployment-id")["disabled"])
+
+        self.assertEqual(
+            [call.args for call in api.request.call_args_list],
+            [
+                ("GET", "/mcp/deployments/deployment-id/github-webhook"),
+                ("POST", "/mcp/deployments/deployment-id/github-webhook"),
+                ("DELETE", "/mcp/deployments/deployment-id/github-webhook"),
+            ],
+        )
+
+class EnvironmentVariableTests(TestCase):
     @patch("deployer_mcp.server._client")
     def test_environment_upsert_calls_single_variable_mcp_operation(self, client) -> None:
         api = client.return_value
@@ -217,6 +253,29 @@ class DevelopmentSessionTests(TestCase):
         client.return_value.request.assert_called_once_with(
             "GET", "/mcp/dev-sessions/session-id/metrics"
         )
+
+    @patch("deployer_mcp.server._client")
+    def test_timings_tool_uses_bounded_owner_scoped_endpoint(self, client) -> None:
+        client.return_value.request.return_value = {
+            "session_id": "session-id",
+            "samples": [],
+        }
+
+        result = get_deployer_dev_session_timings(
+            "session-id", tail_lines=40, since_seconds=900
+        )
+
+        self.assertEqual(result["samples"], [])
+        client.return_value.request.assert_called_once_with(
+            "GET",
+            "/mcp/dev-sessions/session-id/timings?tail_lines=40&since_seconds=900",
+        )
+
+    def test_timings_tool_rejects_unbounded_limits(self) -> None:
+        with self.assertRaises(ValueError):
+            get_deployer_dev_session_timings("session-id", tail_lines=501)
+        with self.assertRaises(ValueError):
+            get_deployer_dev_session_timings("session-id", since_seconds=86_401)
 
     @patch("deployer_mcp.server._client")
     def test_fixture_tool_uses_owner_scoped_session_endpoint(self, client) -> None:
