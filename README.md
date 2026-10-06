@@ -7,15 +7,27 @@ credential-redacted build logs, and container logs.
 It has no tools for profiles, users, tokens, credentials, infrastructure
 administration, authoritative DNS administration, arbitrary/manual DNS records,
 device-agent installation, public TCP endpoint administration, or global
-settings.
+settings. It can manage an allowlisted direct UDP endpoint only on a device
+deployment owned by the MCP token's user, and only for UDP routes declared in
+that deployment's manifest.
 
 The server uses the stable MCP Python SDK 2.x and supports the sessionless MCP
 `2026-07-28` protocol revision. The same stdio endpoint remains compatible with
 clients using the earlier `2025-11-25` initialization handshake.
 
-MCP may validate portable `tcp_routes` in `.deployer.yml`, but an administrator
-must enable the outbound agent and bind those route names to environment-
-specific domains and public ports in the Deployer web UI or REST API.
+MCP may validate portable `udp_routes` in `.deployer.yml`. For an owned device
+deployment, use `list_deployer_udp_endpoints`, `create_deployer_udp_endpoint`,
+`update_deployer_udp_endpoint`, and `delete_deployer_udp_endpoint` to bind
+declared route names to environment-specific domains and allowlisted public
+UDP ports. These scoped operations do not expose device, DNS-infrastructure,
+or border-proxy administration. UDP is published directly on the target;
+managed border forwarding is used only for a missing address family when the
+target has a public address reachable from that border. It does not tunnel
+UDP to a NAT-only target.
+
+Creating, updating, disabling, or deleting an endpoint changes the saved
+publication and edge configuration. Redeploy the application to apply or
+remove its Docker Compose UDP port binding on the target.
 
 When a route domain belongs to a Deployer-managed zone, deployment automatically
 publishes the route-owned `A` and/or `AAAA` values shown by the planning tool.
@@ -208,7 +220,7 @@ storage; do not place passwords or API tokens in them.
 ```bash
 python3 -m venv "$HOME/.local/share/deployer-mcp"
 "$HOME/.local/share/deployer-mcp/bin/python" -m pip install \
-  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.8"
+  "deployer-mcp @ git+https://github.com/hajda14/deployer-mcp.git@v0.2.9"
 ```
 
 Create an `MCP only` or `REST API + MCP` token in Deployer’s Profile Settings,

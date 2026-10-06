@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import patch
 
@@ -14,7 +16,10 @@ from deployer_mcp.server import (
     cancel_deployer_build_job,
     configure_deployer_github_webhook,
     create_deployer_dev_session,
+    create_deployer_manifest,
+    create_deployer_udp_endpoint,
     disable_deployer_github_webhook,
+    delete_deployer_udp_endpoint,
     enable_deployer_private_preview,
     apply_deployer_dev_session_fixture,
     get_deployer_build_job,
@@ -26,10 +31,12 @@ from deployer_mcp.server import (
     list_deployer_dev_session_runners,
     list_deployer_build_jobs,
     list_deployer_dev_sessions,
+    list_deployer_udp_endpoints,
     list_deployer_releases,
     mcp,
     rollback_deployer_release,
     stop_deployer_dev_session,
+    update_deployer_udp_endpoint,
     upsert_environment_variable,
 )
 
@@ -47,6 +54,10 @@ class ProtocolV2Tests(IsolatedAsyncioTestCase):
         self.assertIn("plan_deployer_project", tool_names)
         self.assertIn("deploy_deployer_project", tool_names)
         self.assertIn("upsert_environment_variable", tool_names)
+        self.assertIn("list_deployer_udp_endpoints", tool_names)
+        self.assertIn("create_deployer_udp_endpoint", tool_names)
+        self.assertIn("update_deployer_udp_endpoint", tool_names)
+        self.assertIn("delete_deployer_udp_endpoint", tool_names)
         self.assertIn("configure_deployer_github_webhook", tool_names)
         self.assertIn("get_deployer_github_webhook", tool_names)
         self.assertIn("disable_deployer_github_webhook", tool_names)
@@ -115,6 +126,34 @@ class DeploymentPayloadTests(TestCase):
 
         self.assertEqual(_payload(None, [route])["routes"], [route])
 
+    @patch("deployer_mcp.server._client")
+    def test_manifest_tool_writes_udp_routes(self, client) -> None:
+        client.return_value.request.return_value = {"valid": True, "errors": []}
+        udp_routes = [
+            {
+                "name": "livekit-ice",
+                "service": "livekit",
+                "port_name": "livekit-ice",
+            }
+        ]
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "compose.yml").write_text(
+                "services:\n  livekit:\n    image: livekit/livekit-server\n",
+                encoding="utf-8",
+            )
+
+            result = create_deployer_manifest(
+                str(root),
+                "voice-service",
+                ports=[{"name": "livekit-ice", "port": 7882, "protocol": "udp"}],
+                udp_routes=udp_routes,
+            )
+
+            self.assertEqual(result["validation"]["valid"], True)
+            self.assertIn("udp_routes:", result["manifest_content"])
+            self.assertIn("livekit-ice", result["manifest_content"])
+
 
 class GithubWebhookTests(TestCase):
     @patch("deployer_mcp.server._client")
@@ -140,6 +179,57 @@ class GithubWebhookTests(TestCase):
                 ("POST", "/mcp/deployments/deployment-id/github-webhook"),
                 ("DELETE", "/mcp/deployments/deployment-id/github-webhook"),
             ],
+        )
+
+
+class UdpEndpointToolsTests(TestCase):
+    @patch("deployer_mcp.server._client")
+    def test_udp_endpoint_tools_use_owner_scoped_deployment_routes(self, client) -> None:
+        api = client.return_value
+        endpoint = {"id": "endpoint-id", "transport": "udp"}
+        api.request.side_effect = [[endpoint], endpoint, endpoint, None]
+        ports = [{"route_name": "livekit-ice", "public_port": 7882}]
+
+        self.assertEqual(list_deployer_udp_endpoints("deployment-id"), [endpoint])
+        self.assertEqual(
+            create_deployer_udp_endpoint(
+                "deployment-id",
+                "game-voice",
+                "voice.example.test",
+                ports,
+                advertised_ipv6="2001:db8::10",
+            ),
+            endpoint,
+        )
+        self.assertEqual(
+            update_deployer_udp_endpoint(
+                "deployment-id",
+                "endpoint-id",
+                "game-voice",
+                "voice.example.test",
+                ports,
+            ),
+            endpoint,
+        )
+        delete_deployer_udp_endpoint("deployment-id", "endpoint-id")
+
+        calls = api.request.call_args_list
+        self.assertEqual(
+            calls[0].args,
+            ("GET", "/mcp/deployments/deployment-id/udp-endpoints"),
+        )
+        self.assertEqual(
+            calls[1].args[:2],
+            ("POST", "/mcp/deployments/deployment-id/udp-endpoints"),
+        )
+        self.assertEqual(calls[1].kwargs["json"]["ports"], ports)
+        self.assertEqual(
+            calls[2].args[:2],
+            ("PUT", "/mcp/deployments/deployment-id/udp-endpoints/endpoint-id"),
+        )
+        self.assertEqual(
+            calls[3].args,
+            ("DELETE", "/mcp/deployments/deployment-id/udp-endpoints/endpoint-id"),
         )
 
 class EnvironmentVariableTests(TestCase):

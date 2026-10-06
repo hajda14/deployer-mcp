@@ -13,14 +13,14 @@ from deployer_mcp.client import DeployerClient
 
 mcp = MCPServer(
     "deployer",
-    version="0.2.8",
+    version="0.2.9",
     instructions=(
         "Create and validate .deployer.yml files, then plan, deploy, inspect, "
         "and redeploy projects, enable owner-scoped Private Preview, and manage "
-        "signed GitHub push webhooks for owned deployments. "
-        "existing HTTPS deployment route. This server cannot manage profiles, tokens, "
+        "signed GitHub push webhooks for owned deployments, and declared UDP "
+        "endpoints for owned device deployments. This server cannot manage profiles, tokens, "
         "credentials, identities, devices, pools, DNS infrastructure, arbitrary "
-        "DNS records, or global settings. Development sessions are scoped to "
+        "DNS records, public TCP endpoints, or global settings. Development sessions are scoped to "
         "deployments owned by the token's user. Deployment tools may "
         "automatically "
         "manage only the A/AAAA records owned by their gateway routes."
@@ -172,6 +172,7 @@ def create_deployer_manifest(
     project_name: str | None = None,
     ports: list[dict[str, Any]] | None = None,
     routes: list[dict[str, Any]] | None = None,
+    udp_routes: list[dict[str, Any]] | None = None,
     workloads: list[dict[str, Any]] | None = None,
     certificate_mounts: list[dict[str, Any]] | None = None,
     overwrite: bool = False,
@@ -179,7 +180,8 @@ def create_deployer_manifest(
     """Create a validated .deployer.yml in an existing local project.
 
     `ports` entries describe named internal service ports. `routes` entries
-    connect a manifest route name to a Compose service and port. `workloads`
+    connect an HTTP route name to a Compose service and port. `udp_routes`
+    declares direct UDP service ports for real-time traffic. `workloads`
     optionally define Swarm mode, replicas, resources, and placement. Domains
     and TLS settings are supplied later as deployment route bindings.
     `certificate_mounts` declares a Compose service and read-only in-container
@@ -206,6 +208,7 @@ def create_deployer_manifest(
         },
         "ports": ports or [],
         "routes": routes or [],
+        "udp_routes": udp_routes or [],
         "workloads": workloads or [],
         "certificate_mounts": certificate_mounts or [],
     }
@@ -493,6 +496,94 @@ def redeploy_deployer_project(deployment_id: str) -> dict[str, Any]:
         "POST",
         f"/mcp/deployments/{deployment_id}/redeploy",
         timeout=600,
+    )
+
+
+@mcp.tool()
+def list_deployer_udp_endpoints(deployment_id: str) -> list[dict[str, Any]]:
+    """List direct UDP endpoints configured for an owned device deployment."""
+    deployment_id = _safe_resource_id(deployment_id, "deployment_id")
+    return _client().request(
+        "GET",
+        f"/mcp/deployments/{deployment_id}/udp-endpoints",
+    )
+
+
+@mcp.tool()
+def create_deployer_udp_endpoint(
+    deployment_id: str,
+    name: str,
+    domain: str,
+    ports: list[dict[str, Any]],
+    advertised_ipv4: str | None = None,
+    advertised_ipv6: str | None = None,
+    bind_ip: str | None = None,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    """Create a UDP endpoint on an owned device deployment.
+
+    Every `ports` entry binds a manifest `udp_routes[].name` to an
+    allowlisted public UDP port. Optional advertised addresses override the
+    target/border address used for managed DNS. This cannot create TCP
+    endpoints or modify devices, DNS infrastructure, or global settings.
+    """
+    deployment_id = _safe_resource_id(deployment_id, "deployment_id")
+    return _client().request(
+        "POST",
+        f"/mcp/deployments/{deployment_id}/udp-endpoints",
+        json={
+            "name": name,
+            "domain": domain,
+            "ports": ports,
+            "advertised_ipv4": advertised_ipv4,
+            "advertised_ipv6": advertised_ipv6,
+            "bind_ip": bind_ip,
+            "enabled": enabled,
+        },
+    )
+
+
+@mcp.tool()
+def update_deployer_udp_endpoint(
+    deployment_id: str,
+    endpoint_id: str,
+    name: str,
+    domain: str,
+    ports: list[dict[str, Any]],
+    advertised_ipv4: str | None = None,
+    advertised_ipv6: str | None = None,
+    bind_ip: str | None = None,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    """Update a UDP endpoint owned by this deployment's account."""
+    deployment_id = _safe_resource_id(deployment_id, "deployment_id")
+    endpoint_id = _safe_resource_id(endpoint_id, "endpoint_id")
+    return _client().request(
+        "PUT",
+        f"/mcp/deployments/{deployment_id}/udp-endpoints/{endpoint_id}",
+        json={
+            "name": name,
+            "domain": domain,
+            "ports": ports,
+            "advertised_ipv4": advertised_ipv4,
+            "advertised_ipv6": advertised_ipv6,
+            "bind_ip": bind_ip,
+            "enabled": enabled,
+        },
+    )
+
+
+@mcp.tool()
+def delete_deployer_udp_endpoint(
+    deployment_id: str,
+    endpoint_id: str,
+) -> None:
+    """Delete a UDP endpoint from an owned device deployment."""
+    deployment_id = _safe_resource_id(deployment_id, "deployment_id")
+    endpoint_id = _safe_resource_id(endpoint_id, "endpoint_id")
+    _client().request(
+        "DELETE",
+        f"/mcp/deployments/{deployment_id}/udp-endpoints/{endpoint_id}",
     )
 
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "deployer-mcp"
-version = "0.2.8"
+version = "0.2.9"
 description = "Scoped MCP server for project deployments through Deployer"
 readme = "README.md"
 requires-python = ">=3.11"
